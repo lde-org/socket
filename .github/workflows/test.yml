@@ -1,0 +1,73 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+          - os: ubuntu-22.04-arm
+          - os: ubuntu-22.04-arm
+            android: true
+          - os: windows-latest
+          - os: windows-11-arm
+          - os: macos-15
+          - os: macos-15-intel
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup lde
+        uses: lde-org/setup-lde@master
+        with:
+          version: nightly
+          platform: ${{ matrix.android && 'Android' || '' }}
+
+      - name: Run tests
+        if: "!matrix.android"
+        run: lde test
+
+      # Needed otherwise created lde.lock will be unable to be read
+      - name: Fix workspace permissions (Android)
+        if: matrix.android
+        run: |
+          chmod -R a+rw ${{ github.workspace }}
+          cp ~/.lde/lde ${{ github.workspace }}/lde
+
+      - name: Cache test image (Android)
+        if: matrix.android
+        id: cache-android-image
+        uses: actions/cache@v5
+        with:
+          path: /tmp/termux-android.tar
+          key: termux-android-v6
+
+      - name: Run tests (Android)
+        if: matrix.android
+        run: |
+          if [[ "${{ steps.cache-android-image.outputs.cache-hit }}" != "true" ]]; then
+            docker run --privileged --platform linux/arm64 \
+              --name termux-build termux/termux-docker:aarch64 \
+              bash -c "apt update && apt install -y clang cmake ninja openssl"
+            docker commit termux-build termux-android:latest
+            docker rm termux-build
+            docker save termux-android:latest -o /tmp/termux-android.tar
+          fi
+
+          docker load -i /tmp/termux-android.tar
+
+          docker run --rm --privileged --platform linux/arm64 \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            termux-android:latest \
+            bash -c "/workspace/lde test"

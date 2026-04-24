@@ -55,8 +55,8 @@ ffi.C.WSAStartup(0x0202, wsadata)
 local function errmsg()
 	return "WSAError " .. ffi.C.WSAGetLastError()
 end
-socket.raw.Handle
----@return net.raw.Handle?, string?
+
+---@return socket.raw.Handle?, string?
 function socket.socket()
 	local s = ffi.C.socket(AF_INET, SOCK_STREAM, 0)
 	if s == INVALID_SOCKET then
@@ -65,8 +65,8 @@ function socket.socket()
 
 	return s
 end
-socket.raw.Handle
----@param handle net.raw.Handle
+
+---@param handle socket.raw.Handle
 ---@param address string
 ---@param port integer
 ---@return true?, string?
@@ -82,8 +82,8 @@ function socket.connect(handle, address, port)
 
 	return true
 end
-socket.raw.Handle
----@param handle net.raw.Handle
+
+---@param handle socket.raw.Handle
 ---@param address string
 ---@param port integer
 ---@return true?, string?
@@ -99,8 +99,8 @@ function socket.bind(handle, address, port)
 
 	return true
 end
-socket.raw.Handle
----@param handle net.raw.Handle
+
+---@param handle socket.raw.Handle
 ---@param backlog integer
 ---@return true?, string?
 function socket.listen(handle, backlog)
@@ -110,9 +110,9 @@ function socket.listen(handle, backlog)
 
 	return true
 end
-socket.raw.Handle
----@param hsocket.raw.HandleHandle
----@return net.raw.Handle?, string?
+
+---@param handle socket.raw.Handle
+---@return socket.raw.Handle?, string?
 function socket.accept(handle)
 	local addr    = ffi.new("struct sockaddr_in")
 	local addrlen = ffi.new("int[1]", ffi.sizeof(addr))
@@ -124,8 +124,8 @@ function socket.accept(handle)
 
 	return s
 end
-socket.raw.Handle
----@param handle net.raw.Handle
+
+---@param handle socket.raw.Handle
 ---@param buf ffi.cdata*
 ---@param len number
 ---@return number?, string?
@@ -137,8 +137,8 @@ function socket.read(handle, buf, len)
 
 	return n
 end
-socket.raw.Handle
----@param handle net.raw.Handle
+
+---@param handle socket.raw.Handle
 ---@param data ffi.cdata*
 ---@param len number
 ---@return number?, string?
@@ -150,8 +150,8 @@ function socket.write(handle, data, len)
 
 	return n
 end
-socket.raw.Handle
----@param handle net.raw.Handle
+
+---@param handle socket.raw.Handle
 ---@return string?, number?, string?
 function socket.getsockname(handle)
 	local addr    = ffi.new("struct sockaddr_in")
@@ -168,7 +168,7 @@ function socket.getsockname(handle)
 	return ip, tonumber(ffi.C.ntohs(addr.sin_port))
 end
 
----@param handle net.raw.Handle
+---@param handle socket.raw.Handle
 ---@return true?, string?
 function socket.close(handle)
 	if ffi.C.closesocket(handle) ~= 0 then

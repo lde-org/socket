@@ -3,21 +3,45 @@ local socket = {}
 
 local ffi = require("ffi")
 
+local isOsx = jit.os == "OSX"
+
+if isOsx then
+	ffi.cdef([[
+		typedef unsigned int socklen_t;
+
+		struct sockaddr {
+			unsigned char  sa_len;
+			unsigned char  sa_family;
+			char           sa_data[14];
+		};
+
+		struct sockaddr_in {
+			unsigned char  sin_len;
+			unsigned char  sin_family;
+			unsigned short sin_port;
+			unsigned int   sin_addr;
+			char           sin_zero[8];
+		};
+	]])
+else
+	ffi.cdef([[
+		typedef int socklen_t;
+
+		struct sockaddr {
+			unsigned short sa_family;
+			char           sa_data[14];
+		};
+
+		struct sockaddr_in {
+			unsigned short sin_family;
+			unsigned short sin_port;
+			unsigned int   sin_addr;
+			char           sin_zero[8];
+		};
+	]])
+end
+
 ffi.cdef([[
-	typedef int socklen_t;
-
-	struct sockaddr {
-		unsigned short sa_family;
-		char           sa_data[14];
-	};
-
-	struct sockaddr_in {
-		unsigned short sin_family;
-		unsigned short sin_port;
-		unsigned int   sin_addr;
-		char           sin_zero[8];
-	};
-
 	int    socket(int domain, int type, int protocol);
 	int    connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 	int    bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
@@ -35,14 +59,31 @@ ffi.cdef([[
 	int     getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 ]])
 
-local AF_INET     = 2
-local SOCK_STREAM = 1
-local SOCK_DGRAM  = 2
-local RECV_BUF    = 4096
+local AF_INET       = 2
+local SOCK_STREAM   = 1
+local SOCK_DGRAM    = 2
+local RECV_BUF      = 4096
+local SOCKADDR_SIZE = ffi.sizeof("struct sockaddr_in")
 
 ---@return string
 local function errmsg()
 	return ffi.string(ffi.C.strerror(ffi.errno()))
+end
+
+---@param address string
+---@param port integer
+---@return ffi.cdata*
+local function newSockaddrIn(address, port)
+	local addr      = ffi.new("struct sockaddr_in")
+	addr.sin_family = AF_INET
+	addr.sin_port   = ffi.C.htons(port)
+	addr.sin_addr   = ffi.C.inet_addr(address)
+
+	if isOsx then
+		addr.sin_len = SOCKADDR_SIZE
+	end
+
+	return addr
 end
 
 ---@return socket.raw.Handle?, string?
@@ -60,15 +101,10 @@ end
 ---@param port integer
 ---@return true?, string?
 function socket.connect(handle, address, port)
-	local addr      = ffi.new("struct sockaddr_in")
-	addr.sin_family = AF_INET
-	addr.sin_port   = ffi.C.htons(port)
-	addr.sin_addr   = ffi.C.inet_addr(address)
-
-	if ffi.C.connect(handle, ffi.cast("struct sockaddr *", addr), ffi.sizeof(addr)) < 0 then
+	local addr = newSockaddrIn(address, port)
+	if ffi.C.connect(handle, ffi.cast("struct sockaddr *", addr), SOCKADDR_SIZE) < 0 then
 		return nil, "connect failed: " .. errmsg()
 	end
-
 	return true
 end
 
@@ -77,12 +113,8 @@ end
 ---@param port integer
 ---@return true?, string?
 function socket.bind(handle, address, port)
-	local addr      = ffi.new("struct sockaddr_in")
-	addr.sin_family = AF_INET
-	addr.sin_port   = ffi.C.htons(port)
-	addr.sin_addr   = ffi.C.inet_addr(address)
-
-	if ffi.C.bind(handle, ffi.cast("struct sockaddr *", addr), ffi.sizeof(addr)) < 0 then
+	local addr = newSockaddrIn(address, port)
+	if ffi.C.bind(handle, ffi.cast("struct sockaddr *", addr), SOCKADDR_SIZE) < 0 then
 		return nil, "bind failed: " .. errmsg()
 	end
 
@@ -104,7 +136,7 @@ end
 ---@return socket.raw.Handle?, string?
 function socket.accept(handle)
 	local addr    = ffi.new("struct sockaddr_in")
-	local addrlen = ffi.new("socklen_t[1]", ffi.sizeof(addr))
+	local addrlen = ffi.new("socklen_t[1]", SOCKADDR_SIZE)
 
 	local fd      = ffi.C.accept(handle, ffi.cast("struct sockaddr *", addr), addrlen)
 	if fd < 0 then

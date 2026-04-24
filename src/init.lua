@@ -18,6 +18,7 @@ local net = {}
 ---@field close fun(handle: net.raw.Handle): true?, string?
 ---@field sendto fun(handle: net.raw.Handle, data: string, address: string, port: number): true?, string?
 ---@field recvfrom fun(handle: net.raw.Handle): string?, string?, number?, string?
+---@field getsockname fun(handle: net.raw.Handle): string?, number?, string?
 
 local raw ---@type net.raw.socket
 if jit.os == "Windows" then
@@ -91,6 +92,11 @@ do
 		return Stream.new(handle), nil
 	end
 
+	---@return string?, number?, string?
+	function Listener:getLocalAddr()
+		return raw.getsockname(self.handle)
+	end
+
 	function Listener:close()
 		return raw.close(self.handle)
 	end
@@ -161,6 +167,11 @@ do
 		end
 
 		return total
+	end
+
+	---@return string?, number?, string?
+	function Stream:getLocalAddr()
+		return raw.getsockname(self.handle)
 	end
 
 	function Stream:close()
@@ -246,6 +257,11 @@ do
 	---@return string?, string?, number?, string?
 	function Socket:recvFrom()
 		return raw.recvfrom(self.handle)
+	end
+
+	---@return string?, number?, string?
+	function Socket:getLocalAddr()
+		return raw.getsockname(self.handle)
 	end
 
 	function Socket:close()

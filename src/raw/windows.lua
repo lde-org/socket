@@ -36,6 +36,7 @@ ffi.cdef([[
 	unsigned long inet_addr(const char *cp);
 	int    sendto(SOCKET s, const char *buf, int len, int flags, const struct sockaddr *to, int tolen);
 	int    recvfrom(SOCKET s, char *buf, int len, int flags, struct sockaddr *from, int *fromlen);
+	int    getsockname(SOCKET s, struct sockaddr *name, int *namelen);
 	int    WSAGetLastError(void);
 	int    WSAStartup(unsigned short wVersionRequested, void *lpWSAData);
 ]])
@@ -148,6 +149,23 @@ function socket.write(handle, data, len)
 	end
 
 	return n
+end
+
+---@param handle net.raw.Handle
+---@return string?, number?, string?
+function socket.getsockname(handle)
+	local addr    = ffi.new("struct sockaddr_in")
+	local addrlen = ffi.new("int[1]", ffi.sizeof(addr))
+	if ffi.C.getsockname(handle, ffi.cast("struct sockaddr *", addr), addrlen) ~= 0 then
+		return nil, nil, "getsockname failed: " .. errmsg()
+	end
+	local s_addr = addr.sin_addr.s_addr
+	local ip = string.format("%d.%d.%d.%d",
+		bit.band(s_addr, 0xFF),
+		bit.band(bit.rshift(s_addr, 8), 0xFF),
+		bit.band(bit.rshift(s_addr, 16), 0xFF),
+		bit.band(bit.rshift(s_addr, 24), 0xFF))
+	return ip, tonumber(ffi.C.ntohs(addr.sin_port))
 end
 
 ---@param handle net.raw.Handle

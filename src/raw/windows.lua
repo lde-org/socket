@@ -41,6 +41,8 @@ ffi.cdef([[
 	int    WSAStartup(unsigned short wVersionRequested, void *lpWSAData);
 ]])
 
+local ws2 = ffi.load("ws2_32")
+
 local AF_INET        = 2
 local SOCK_STREAM    = 1
 local SOCK_DGRAM     = 2
@@ -49,16 +51,16 @@ local INVALID_SOCKET = ffi.cast("SOCKET", -1)
 
 -- WSAData buffer: 408 bytes covers both 32- and 64-bit layouts
 local wsadata        = ffi.new("char[408]")
-ffi.C.WSAStartup(0x0202, wsadata)
+ws2.WSAStartup(0x0202, wsadata)
 
 ---@return string
 local function errmsg()
-	return "WSAError " .. ffi.C.WSAGetLastError()
+	return "WSAError " .. ws2.WSAGetLastError()
 end
 
 ---@return socket.raw.Handle?, string?
 function socket.socket()
-	local s = ffi.C.socket(AF_INET, SOCK_STREAM, 0)
+	local s = ws2.socket(AF_INET, SOCK_STREAM, 0)
 	if s == INVALID_SOCKET then
 		return nil, "socket failed: " .. errmsg()
 	end
@@ -73,10 +75,10 @@ end
 function socket.connect(handle, address, port)
 	local addr           = ffi.new("struct sockaddr_in")
 	addr.sin_family      = AF_INET
-	addr.sin_port        = ffi.C.htons(port)
-	addr.sin_addr.s_addr = ffi.C.inet_addr(address)
+	addr.sin_port        = ws2.htons(port)
+	addr.sin_addr.s_addr = ws2.inet_addr(address)
 
-	if ffi.C.connect(handle, ffi.cast("struct sockaddr *", addr), ffi.sizeof(addr)) ~= 0 then
+	if ws2.connect(handle, ffi.cast("struct sockaddr *", addr), ffi.sizeof(addr)) ~= 0 then
 		return nil, "connect failed: " .. errmsg()
 	end
 
@@ -90,10 +92,10 @@ end
 function socket.bind(handle, address, port)
 	local addr           = ffi.new("struct sockaddr_in")
 	addr.sin_family      = AF_INET
-	addr.sin_port        = ffi.C.htons(port)
-	addr.sin_addr.s_addr = ffi.C.inet_addr(address)
+	addr.sin_port        = ws2.htons(port)
+	addr.sin_addr.s_addr = ws2.inet_addr(address)
 
-	if ffi.C.bind(handle, ffi.cast("struct sockaddr *", addr), ffi.sizeof(addr)) ~= 0 then
+	if ws2.bind(handle, ffi.cast("struct sockaddr *", addr), ffi.sizeof(addr)) ~= 0 then
 		return nil, "bind failed: " .. errmsg()
 	end
 
@@ -104,7 +106,7 @@ end
 ---@param backlog integer
 ---@return true?, string?
 function socket.listen(handle, backlog)
-	if ffi.C.listen(handle, backlog) ~= 0 then
+	if ws2.listen(handle, backlog) ~= 0 then
 		return nil, "listen failed: " .. errmsg()
 	end
 
@@ -116,7 +118,7 @@ end
 function socket.accept(handle)
 	local addr    = ffi.new("struct sockaddr_in")
 	local addrlen = ffi.new("int[1]", ffi.sizeof(addr))
-	local s       = ffi.C.accept(handle, ffi.cast("struct sockaddr *", addr), addrlen)
+	local s       = ws2.accept(handle, ffi.cast("struct sockaddr *", addr), addrlen)
 
 	if s == INVALID_SOCKET then
 		return nil, "accept failed: " .. errmsg()
@@ -130,7 +132,7 @@ end
 ---@param len number
 ---@return number?, string?
 function socket.read(handle, buf, len)
-	local n = ffi.C.recv(handle, buf, len, 0)
+	local n = ws2.recv(handle, buf, len, 0)
 	if n < 0 then
 		return nil, "read failed: " .. errmsg()
 	end
@@ -143,7 +145,7 @@ end
 ---@param len number
 ---@return number?, string?
 function socket.write(handle, data, len)
-	local n = ffi.C.send(handle, data, len, 0)
+	local n = ws2.send(handle, data, len, 0)
 	if n < 0 then
 		return nil, "write failed: " .. errmsg()
 	end
@@ -156,7 +158,7 @@ end
 function socket.getsockname(handle)
 	local addr    = ffi.new("struct sockaddr_in")
 	local addrlen = ffi.new("int[1]", ffi.sizeof(addr))
-	if ffi.C.getsockname(handle, ffi.cast("struct sockaddr *", addr), addrlen) ~= 0 then
+	if ws2.getsockname(handle, ffi.cast("struct sockaddr *", addr), addrlen) ~= 0 then
 		return nil, nil, "getsockname failed: " .. errmsg()
 	end
 	local s_addr = addr.sin_addr.s_addr
@@ -165,13 +167,13 @@ function socket.getsockname(handle)
 		bit.band(bit.rshift(s_addr, 8), 0xFF),
 		bit.band(bit.rshift(s_addr, 16), 0xFF),
 		bit.band(bit.rshift(s_addr, 24), 0xFF))
-	return ip, tonumber(ffi.C.ntohs(addr.sin_port))
+	return ip, tonumber(ws2.ntohs(addr.sin_port))
 end
 
 ---@param handle socket.raw.Handle
 ---@return true?, string?
 function socket.close(handle)
-	if ffi.C.closesocket(handle) ~= 0 then
+	if ws2.closesocket(handle) ~= 0 then
 		return nil, "close failed: " .. errmsg()
 	end
 

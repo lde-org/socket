@@ -1,58 +1,58 @@
 local ffi = require("ffi")
 
----@class net
-local net = {}
+---@class socket
+local socket = {}
 
 --- Opaque socket handle
----@class net.raw.Handle
+---@class socket.raw.Handle
 
----@class net.raw.socket
----@field tcp fun(): net.raw.Handle?, string?
----@field udp fun(): net.raw.Handle?, string?
----@field connect fun(handle: net.raw.Handle, address: string, port: number): true?, string?
----@field bind fun(handle: net.raw.Handle, address: string, port: number): true?, string?
----@field listen fun(handle: net.raw.Handle, backlog: number): true?, string?
----@field accept fun(handle: net.raw.Handle): net.raw.Handle?, string?
----@field read fun(handle: net.raw.Handle, buf: ffi.cdata*, len: number): number?, string?
----@field write fun(handle: net.raw.Handle, data: ffi.cdata*, len: number): number?, string?
----@field close fun(handle: net.raw.Handle): true?, string?
----@field sendto fun(handle: net.raw.Handle, data: string, address: string, port: number): true?, string?
----@field recvfrom fun(handle: net.raw.Handle): string?, string?, number?, string?
----@field getsockname fun(handle: net.raw.Handle): string?, number?, string?
+---@class socket.raw
+---@field tcp fun(): socket.raw.Handle?, string?
+---@field udp fun(): socket.raw.Handle?, string?
+---@field connect fun(handle: socket.raw.Handle, address: string, port: number): true?, string?
+---@field bind fun(handle: socket.raw.Handle, address: string, port: number): true?, string?
+---@field listen fun(handle: socket.raw.Handle, backlog: number): true?, string?
+---@field accept fun(handle: socket.raw.Handle): socket.raw.Handle?, string?
+---@field read fun(handle: socket.raw.Handle, buf: ffi.cdata*, len: number): number?, string?
+---@field write fun(handle: socket.raw.Handle, data: ffi.cdata*, len: number): number?, string?
+---@field close fun(handle: socket.raw.Handle): true?, string?
+---@field sendto fun(handle: socket.raw.Handle, data: string, address: string, port: number): true?, string?
+---@field recvfrom fun(handle: socket.raw.Handle): string?, string?, number?, string?
+---@field getsockname fun(handle: socket.raw.Handle): string?, number?, string?
 
-local raw ---@type net.raw.socket
+local raw ---@type socket.raw
 if jit.os == "Windows" then
-	raw = require("net.raw.windows")
+	raw = require("socket.raw.windows")
 elseif jit.os == "OSX" or jit.os == "Linux" or jit.os == "POSIX" then
-	raw = require("net.raw.posix")
+	raw = require("socket.raw.posix")
 end
 
----@class net.tcp
+---@class socket.tcp
 local tcp = {}
 do
-	---@class net.tcp.Listener
-	---@field private handle net.raw.Handle
+	---@class socket.tcp.Listener
+	---@field private handle socket.raw.Handle
 	local Listener = {}
 	Listener.__index = Listener
 
-	---@param handle net.raw.Handle
+	---@param handle socket.raw.Handle
 	function Listener.new(handle)
 		return setmetatable({ handle = handle }, Listener)
 	end
 
-	---@class net.tcp.Stream
-	---@field private handle net.raw.Handle
+	---@class socket.tcp.Stream
+	---@field private handle socket.raw.Handle
 	local Stream = {}
 	Stream.__index = Stream
 
-	---@param handle net.raw.Handle
+	---@param handle socket.raw.Handle
 	function Stream.new(handle)
 		return setmetatable({ handle = handle }, Stream)
 	end
 
 	---@param address string
 	---@param port number
-	---@return net.tcp.Listener?, string?
+	---@return socket.tcp.Listener?, string?
 	function tcp.bind(address, port)
 		local handle, err = raw.tcp()
 		if not handle then
@@ -76,7 +76,6 @@ do
 
 	---@param address string
 	---@param port number
-	---@return net.tcp.Stream?, string?
 	function tcp.connect(address, port)
 		local handle, err = raw.tcp()
 		if not handle then
@@ -179,22 +178,22 @@ do
 	end
 end
 
----@class net.udp
+---@class socket.udp
 local udp = {}
 do
-	---@class net.udp.Socket
-	---@field private handle net.raw.Handle
+	---@class socket.udp.Socket
+	---@field private handle socket.raw.Handle
 	local Socket = {}
 	Socket.__index = Socket
 
-	---@param handle net.raw.Handle
+	---@param handle socket.raw.Handle
 	function Socket.new(handle)
 		return setmetatable({ handle = handle }, Socket)
 	end
 
 	---@param address string
 	---@param port number
-	---@return net.udp.Socket?, string?
+	---@return socket.udp.Socket?, string?
 	function udp.bind(address, port)
 		local handle, err = raw.udp()
 		if not handle then
@@ -212,7 +211,7 @@ do
 
 	---@param address string
 	---@param port number
-	---@return net.udp.Socket?, string?
+	---@return socket.udp.Socket?, string?
 	function udp.connect(address, port)
 		local handle, err = raw.udp()
 		if not handle then
@@ -269,7 +268,7 @@ do
 	end
 end
 
-net.udp = udp
-net.tcp = tcp
+socket.udp = udp
+socket.tcp = tcp
 
-return net
+return socket

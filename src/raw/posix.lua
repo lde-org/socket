@@ -1,4 +1,4 @@
----@class net.raw.socket.posix: net.raw.socket
+---@class socket.raw.posix: socket.raw
 local socket = {}
 
 local ffi = require("ffi")
@@ -32,7 +32,6 @@ ffi.cdef([[
 	char  *strerror(int errnum);
 	ssize_t sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen);
 	ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen);
-	int     getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 
 	extern int errno;
 ]])
@@ -47,7 +46,7 @@ local function errmsg()
 	return ffi.string(ffi.C.strerror(ffi.C.errno))
 end
 
----@return net.raw.Handle?, string?
+---@return socket.raw.Handle?, string?
 function socket.tcp()
 	local fd = ffi.C.socket(AF_INET, SOCK_STREAM, 0)
 	if fd < 0 then
@@ -57,7 +56,7 @@ function socket.tcp()
 	return fd
 end
 
----@param handle net.raw.Handle
+---@param handle socket.raw.Handle
 ---@param address string
 ---@param port integer
 ---@return true?, string?
@@ -74,7 +73,7 @@ function socket.connect(handle, address, port)
 	return true
 end
 
----@param handle net.raw.Handle
+---@param handle socket.raw.Handle
 ---@param address string
 ---@param port integer
 ---@return true?, string?
@@ -91,7 +90,7 @@ function socket.bind(handle, address, port)
 	return true
 end
 
----@param handle net.raw.Handle
+---@param handle socket.raw.Handle
 ---@param backlog integer
 ---@return true?, string?
 function socket.listen(handle, backlog)
@@ -102,8 +101,8 @@ function socket.listen(handle, backlog)
 	return true
 end
 
----@param handle net.raw.Handle
----@return net.raw.Handle?, string?
+---@param handle socket.raw.Handle
+---@return socket.raw.Handle?, string?
 function socket.accept(handle)
 	local addr    = ffi.new("struct sockaddr_in")
 	local addrlen = ffi.new("socklen_t[1]", ffi.sizeof(addr))
@@ -116,7 +115,7 @@ function socket.accept(handle)
 	return fd
 end
 
----@param handle net.raw.Handle
+---@param handle socket.raw.Handle
 ---@param buf ffi.cdata*
 ---@param len number
 ---@return number?, string?
@@ -130,7 +129,7 @@ function socket.read(handle, buf, len)
 	return n
 end
 
----@param handle net.raw.Handle
+---@param handle socket.raw.Handle
 ---@param data ffi.cdata*
 ---@param len number
 ---@return number?, string?
@@ -143,7 +142,7 @@ function socket.write(handle, data, len)
 	return n
 end
 
----@param handle net.raw.Handle
+---@param handle socket.raw.Handle
 ---@return true?, string?
 function socket.close(handle)
 	if ffi.C.close(handle) < 0 then
@@ -153,7 +152,7 @@ function socket.close(handle)
 	return true
 end
 
----@return net.raw.Handle?, string?
+---@return socket.raw.Handle?, string?
 function socket.udp()
 	local fd = ffi.C.socket(AF_INET, SOCK_DGRAM, 0)
 	if fd < 0 then
@@ -163,7 +162,7 @@ function socket.udp()
 	return fd
 end
 
----@param handle net.raw.Handle
+---@param handle socket.raw.Handle
 ---@param data string
 ---@param address string
 ---@param port integer
@@ -179,19 +178,31 @@ function socket.sendto(handle, data, address, port)
 	return true
 end
 
----@param handle net.raw.Handle
----@return string?, number?, string?
-function socket.getsockname(handle)
+---@param handle socket.raw.Handle
+---@return string?, string?, number?, string?
+function socket.recvfrom(handle)
+	local buf     = ffi.new("char[?]", RECV_BUF)
 	local addr    = ffi.new("struct sockaddr_in")
 	local addrlen = ffi.new("socklen_t[1]", ffi.sizeof(addr))
-	if ffi.C.getsockname(handle, ffi.cast("struct sockaddr *", addr), addrlen) < 0 then
-		return nil, nil, "getsockname failed: " .. errmsg()
+	local n       = ffi.C.recvfrom(handle, buf, RECV_BUF, 0, ffi.cast("struct sockaddr *", addr), addrlen)
+
+	if n < 0 then
+		return nil, nil, nil, "recvfrom failed: " .. errmsg()
 	end
-	local raw_addr = addr.sin_addr
-	local ip = string.format("%d.%d.%d.%d",
-		bit.band(raw_addr, 0xFF),
-		bit.band(bit.rshift(raw_addr, 8), 0xFF),
-		bit.band(bit.rshift(raw_addr, 16), 0xFF),
+
+	local raw = addr.sin_addr
+
+	local ip  = string.format("%d.%d.%d.%d",
+		bit.band(raw, 0xFF),
+		bit.band(bit.rshift(raw, 8), 0xFF),
+		bit.band(bit.rshift(raw, 16), 0xFF),
+		bit.band(bit.rshift(raw, 24), 0xFF))
+
+	return ffi.string(buf, n), ip, tonumber(ffi.C.ntohs(addr.sin_port))
+end
+
+return socket
+t.rshift(raw_addr, 16), 0xFF),
 		bit.band(bit.rshift(raw_addr, 24), 0xFF))
 	return ip, tonumber(ffi.C.ntohs(addr.sin_port))
 end

@@ -1,4 +1,4 @@
----@class net.raw.socket.windows: net.raw.socket
+---@class socket.raw.windows: socket.raw
 local socket = {}
 
 local ffi = require("ffi")
@@ -55,7 +55,7 @@ ffi.C.WSAStartup(0x0202, wsadata)
 local function errmsg()
 	return "WSAError " .. ffi.C.WSAGetLastError()
 end
-
+socket.raw.Handle
 ---@return net.raw.Handle?, string?
 function socket.socket()
 	local s = ffi.C.socket(AF_INET, SOCK_STREAM, 0)
@@ -65,7 +65,7 @@ function socket.socket()
 
 	return s
 end
-
+socket.raw.Handle
 ---@param handle net.raw.Handle
 ---@param address string
 ---@param port integer
@@ -82,7 +82,7 @@ function socket.connect(handle, address, port)
 
 	return true
 end
-
+socket.raw.Handle
 ---@param handle net.raw.Handle
 ---@param address string
 ---@param port integer
@@ -99,7 +99,7 @@ function socket.bind(handle, address, port)
 
 	return true
 end
-
+socket.raw.Handle
 ---@param handle net.raw.Handle
 ---@param backlog integer
 ---@return true?, string?
@@ -110,8 +110,8 @@ function socket.listen(handle, backlog)
 
 	return true
 end
-
----@param handle net.raw.Handle
+socket.raw.Handle
+---@param hsocket.raw.HandleHandle
 ---@return net.raw.Handle?, string?
 function socket.accept(handle)
 	local addr    = ffi.new("struct sockaddr_in")
@@ -124,7 +124,7 @@ function socket.accept(handle)
 
 	return s
 end
-
+socket.raw.Handle
 ---@param handle net.raw.Handle
 ---@param buf ffi.cdata*
 ---@param len number
@@ -137,7 +137,7 @@ function socket.read(handle, buf, len)
 
 	return n
 end
-
+socket.raw.Handle
 ---@param handle net.raw.Handle
 ---@param data ffi.cdata*
 ---@param len number
@@ -150,7 +150,7 @@ function socket.write(handle, data, len)
 
 	return n
 end
-
+socket.raw.Handle
 ---@param handle net.raw.Handle
 ---@return string?, number?, string?
 function socket.getsockname(handle)

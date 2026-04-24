@@ -1,27 +1,27 @@
 local test = require("lde-test")
-local net = require("net")
+local socket = require("socket")
 
 -- udp.bind()
 
 test.it("udp.bind() returns a Socket on loopback", function()
-	local sock, err = net.udp.bind("127.0.0.1", 0)
+	local sock, err = socket.udp.bind("127.0.0.1", 0)
 	test.falsy(err)
 	test.truthy(sock)
 	sock:close()
 end)
 
 test.it("udp.bind() returns distinct Sockets", function()
-	local a = assert(net.udp.bind("127.0.0.1", 0))
-	local b = assert(net.udp.bind("127.0.0.1", 0))
+	local a = assert(socket.udp.bind("127.0.0.1", 0))
+	local b = assert(socket.udp.bind("127.0.0.1", 0))
 	test.notEqual(a, b)
 	a:close()
 	b:close()
 end)
 
 test.it("udp.bind() returns an error on already-bound port", function()
-	local a = assert(net.udp.bind("127.0.0.1", 0))
+	local a = assert(socket.udp.bind("127.0.0.1", 0))
 	local _, port = assert(a:getLocalAddr())
-	local b, err = net.udp.bind("127.0.0.1", port)
+	local b, err = socket.udp.bind("127.0.0.1", port)
 	test.falsy(b)
 	test.truthy(err)
 	a:close()
@@ -30,7 +30,7 @@ end)
 -- Socket:getLocalAddr()
 
 test.it("Socket:getLocalAddr() returns a non-zero port", function()
-	local sock = assert(net.udp.bind("127.0.0.1", 0))
+	local sock = assert(socket.udp.bind("127.0.0.1", 0))
 	local ip, port, err = sock:getLocalAddr()
 	test.falsy(err)
 	test.truthy(ip)
@@ -49,7 +49,7 @@ test.skipIf(jit.os == "Windows")("udp sendTo/recvFrom round-trip", function()
 		int   waitpid(int pid, int *status, int options);
 	]])
 
-	local server = assert(net.udp.bind("127.0.0.1", 0))
+	local server = assert(socket.udp.bind("127.0.0.1", 0))
 	local _, port = assert(server:getLocalAddr())
 
 	local pid = ffi.C.fork()
@@ -62,7 +62,7 @@ test.skipIf(jit.os == "Windows")("udp sendTo/recvFrom round-trip", function()
 
 	server:close()
 
-	local client = assert(net.udp.bind("127.0.0.1", 0))
+	local client = assert(socket.udp.bind("127.0.0.1", 0))
 	local ok, err = client:sendTo("ping", "127.0.0.1", port)
 	test.falsy(err)
 	test.truthy(ok)
@@ -86,7 +86,7 @@ test.skipIf(jit.os == "Windows")("udp connect/send round-trip", function()
 		int   waitpid(int pid, int *status, int options);
 	]])
 
-	local server = assert(net.udp.bind("127.0.0.1", 0))
+	local server = assert(socket.udp.bind("127.0.0.1", 0))
 	local _, port = assert(server:getLocalAddr())
 
 	local pid = ffi.C.fork()
@@ -99,7 +99,7 @@ test.skipIf(jit.os == "Windows")("udp connect/send round-trip", function()
 
 	server:close()
 
-	local client = assert(net.udp.connect("127.0.0.1", port))
+	local client = assert(socket.udp.connect("127.0.0.1", port))
 	local ok, err = client:send("ping")
 	test.falsy(err)
 	test.truthy(ok)
@@ -111,7 +111,7 @@ end)
 -- Socket:close()
 
 test.it("Socket:close() returns true", function()
-	local sock = assert(net.udp.bind("127.0.0.1", 0))
+	local sock = assert(socket.udp.bind("127.0.0.1", 0))
 	local ok, err = sock:close()
 	test.falsy(err)
 	test.truthy(ok)

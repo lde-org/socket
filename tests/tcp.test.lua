@@ -1,27 +1,27 @@
 local test = require("lde-test")
-local net = require("net")
+local socket = require("socket")
 
 -- tcp.bind()
 
 test.it("tcp.bind() returns a Listener on loopback", function()
-	local listener, err = net.tcp.bind("127.0.0.1", 0)
+	local listener, err = socket.tcp.bind("127.0.0.1", 0)
 	test.falsy(err)
 	test.truthy(listener)
 	listener:close()
 end)
 
 test.it("tcp.bind() returns distinct Listeners", function()
-	local a = assert(net.tcp.bind("127.0.0.1", 0))
-	local b = assert(net.tcp.bind("127.0.0.1", 0))
+	local a = assert(socket.tcp.bind("127.0.0.1", 0))
+	local b = assert(socket.tcp.bind("127.0.0.1", 0))
 	test.notEqual(a, b)
 	a:close()
 	b:close()
 end)
 
 test.it("tcp.bind() returns an error on already-bound port", function()
-	local a = assert(net.tcp.bind("127.0.0.1", 0))
+	local a = assert(socket.tcp.bind("127.0.0.1", 0))
 	local _, port = assert(a:getLocalAddr())
-	local b, err = net.tcp.bind("127.0.0.1", port)
+	local b, err = socket.tcp.bind("127.0.0.1", port)
 	test.falsy(b)
 	test.truthy(err)
 	a:close()
@@ -30,7 +30,7 @@ end)
 -- Listener:getLocalAddr()
 
 test.it("Listener:getLocalAddr() returns a non-zero port", function()
-	local listener = assert(net.tcp.bind("127.0.0.1", 0))
+	local listener = assert(socket.tcp.bind("127.0.0.1", 0))
 	local ip, port, err = listener:getLocalAddr()
 	test.falsy(err)
 	test.truthy(ip)
@@ -42,11 +42,11 @@ end)
 
 test.it("tcp.connect() returns an error on refused port", function()
 	-- Bind and immediately close to get a port that is guaranteed free
-	local tmp = assert(net.tcp.bind("127.0.0.1", 0))
+	local tmp = assert(socket.tcp.bind("127.0.0.1", 0))
 	local _, port = assert(tmp:getLocalAddr())
 	tmp:close()
 
-	local stream, err = net.tcp.connect("127.0.0.1", port)
+	local stream, err = socket.tcp.connect("127.0.0.1", port)
 	test.falsy(stream)
 	test.truthy(err)
 end)
@@ -62,7 +62,7 @@ test.skipIf(jit.os == "Windows")("tcp round-trip: connect, write, read", functio
 		int   waitpid(int pid, int *status, int options);
 	]])
 
-	local listener = assert(net.tcp.bind("127.0.0.1", 0))
+	local listener = assert(socket.tcp.bind("127.0.0.1", 0))
 	local _, port = assert(listener:getLocalAddr())
 
 	local pid = ffi.C.fork()
@@ -77,7 +77,7 @@ test.skipIf(jit.os == "Windows")("tcp round-trip: connect, write, read", functio
 
 	listener:close()
 
-	local stream, err = net.tcp.connect("127.0.0.1", port)
+	local stream, err = socket.tcp.connect("127.0.0.1", port)
 	test.falsy(err)
 	test.truthy(stream)
 
@@ -101,7 +101,7 @@ test.skipIf(jit.os == "Windows")("Listener:incoming() yields accepted streams", 
 		int   waitpid(int pid, int *status, int options);
 	]])
 
-	local listener = assert(net.tcp.bind("127.0.0.1", 0))
+	local listener = assert(socket.tcp.bind("127.0.0.1", 0))
 	local _, port = assert(listener:getLocalAddr())
 
 	local pid = ffi.C.fork()
@@ -117,7 +117,7 @@ test.skipIf(jit.os == "Windows")("Listener:incoming() yields accepted streams", 
 
 	listener:close()
 
-	local stream = assert(net.tcp.connect("127.0.0.1", port))
+	local stream = assert(socket.tcp.connect("127.0.0.1", port))
 	local msg = assert(stream:read(5))
 	stream:close()
 
@@ -137,7 +137,7 @@ test.skipIf(jit.os == "Windows")("Stream:readInto() reads bytes into a buffer", 
 		int   waitpid(int pid, int *status, int options);
 	]])
 
-	local listener = assert(net.tcp.bind("127.0.0.1", 0))
+	local listener = assert(socket.tcp.bind("127.0.0.1", 0))
 	local _, port = assert(listener:getLocalAddr())
 
 	local pid = ffi.C.fork()
@@ -151,7 +151,7 @@ test.skipIf(jit.os == "Windows")("Stream:readInto() reads bytes into a buffer", 
 
 	listener:close()
 
-	local stream = assert(net.tcp.connect("127.0.0.1", port))
+	local stream = assert(socket.tcp.connect("127.0.0.1", port))
 	local buf = ffi.new("char[4]")
 	local n = assert(stream:readInto(4, buf))
 	stream:close()
@@ -165,7 +165,7 @@ end)
 -- Listener:close()
 
 test.it("Listener:close() returns true", function()
-	local listener = assert(net.tcp.bind("127.0.0.1", 0))
+	local listener = assert(socket.tcp.bind("127.0.0.1", 0))
 	local ok, err = listener:close()
 	test.falsy(err)
 	test.truthy(ok)

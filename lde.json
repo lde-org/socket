@@ -1,5 +1,5 @@
 {
-	"name": "net",
+	"name": "socket",
 	"version": "0.1.0",
 	"dependencies": {},
 	"devDependencies": {

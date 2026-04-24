@@ -32,6 +32,7 @@ ffi.cdef([[
 	char  *strerror(int errnum);
 	ssize_t sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen);
 	ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen);
+	int     getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 
 	extern int errno;
 ]])
@@ -201,33 +202,21 @@ function socket.recvfrom(handle)
 	return ffi.string(buf, n), ip, tonumber(ffi.C.ntohs(addr.sin_port))
 end
 
-return socket
-t.rshift(raw_addr, 16), 0xFF),
-		bit.band(bit.rshift(raw_addr, 24), 0xFF))
-	return ip, tonumber(ffi.C.ntohs(addr.sin_port))
-end
-
----@param handle net.raw.Handle
----@return string?, string?, number?, string?
-function socket.recvfrom(handle)
-	local buf     = ffi.new("char[?]", RECV_BUF)
+---@param handle socket.raw.Handle
+---@return string?, number?, string?
+function socket.getsockname(handle)
 	local addr    = ffi.new("struct sockaddr_in")
 	local addrlen = ffi.new("socklen_t[1]", ffi.sizeof(addr))
-	local n       = ffi.C.recvfrom(handle, buf, RECV_BUF, 0, ffi.cast("struct sockaddr *", addr), addrlen)
-
-	if n < 0 then
-		return nil, nil, nil, "recvfrom failed: " .. errmsg()
+	if ffi.C.getsockname(handle, ffi.cast("struct sockaddr *", addr), addrlen) < 0 then
+		return nil, nil, "getsockname failed: " .. errmsg()
 	end
-
-	local raw = addr.sin_addr
-
-	local ip  = string.format("%d.%d.%d.%d",
-		bit.band(raw, 0xFF),
-		bit.band(bit.rshift(raw, 8), 0xFF),
-		bit.band(bit.rshift(raw, 16), 0xFF),
-		bit.band(bit.rshift(raw, 24), 0xFF))
-
-	return ffi.string(buf, n), ip, tonumber(ffi.C.ntohs(addr.sin_port))
+	local raw_addr = addr.sin_addr
+	local ip = string.format("%d.%d.%d.%d",
+		bit.band(raw_addr, 0xFF),
+		bit.band(bit.rshift(raw_addr, 8), 0xFF),
+		bit.band(bit.rshift(raw_addr, 16), 0xFF),
+		bit.band(bit.rshift(raw_addr, 24), 0xFF))
+	return ip, tonumber(ffi.C.ntohs(addr.sin_port))
 end
 
 return socket

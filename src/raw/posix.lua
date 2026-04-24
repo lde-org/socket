@@ -33,8 +33,6 @@ ffi.cdef([[
 	ssize_t sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen);
 	ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen);
 	int     getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
-
-	extern int errno;
 ]])
 
 local AF_INET     = 2
@@ -44,7 +42,7 @@ local RECV_BUF    = 4096
 
 ---@return string
 local function errmsg()
-	return ffi.string(ffi.C.strerror(ffi.C.errno))
+	return ffi.string(ffi.C.strerror(ffi.errno()))
 end
 
 ---@return socket.raw.Handle?, string?

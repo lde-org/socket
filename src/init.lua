@@ -1,3 +1,5 @@
+local ffi = require("ffi")
+
 ---@class net
 local net = {}
 
@@ -58,10 +60,39 @@ do
 
 		local ok, err = raw.bind(handle, address, port)
 		if not ok then
+			raw.close(handle)
+			return nil, err
+		end
+
+		local ok, err = raw.listen(handle, 128)
+		if not ok then
+			raw.close(handle)
 			return nil, err
 		end
 
 		return Listener.new(handle), nil
+	end
+
+	---@param address string
+	---@param port number
+	---@return net.tcp.Stream?, string?
+	function tcp.connect(address, port)
+		local handle, err = raw.tcp()
+		if not handle then
+			return nil, err
+		end
+
+		local ok, err = raw.connect(handle, address, port)
+		if not ok then
+			raw.close(handle)
+			return nil, err
+		end
+
+		return Stream.new(handle), nil
+	end
+
+	function Listener:close()
+		return raw.close(self.handle)
 	end
 
 	function Listener:accept()
@@ -77,8 +108,6 @@ do
 	function Listener:incoming()
 		return Listener.accept, self, nil
 	end
-
-	local ffi = require("ffi")
 
 	---@param n number
 	function Stream:read(n)
@@ -100,12 +129,17 @@ do
 	---@param n number
 	---@param buf ffi.cdata*
 	function Stream:readInto(n, buf)
-		local got, err = raw.read(self.handle, buf, n)
-		if not got then
-			return nil, "read failed: " .. err
+		local total = 0
+		while total < n do
+			local got, err = raw.read(self.handle, buf + total, n - total)
+			if not got then
+				return nil, "read failed: " .. err
+			end
+
+			total = total + got
 		end
 
-		return got
+		return total
 	end
 
 	---@param buf ffi.cdata*|string
@@ -128,12 +162,95 @@ do
 
 		return total
 	end
+
+	function Stream:close()
+		return raw.close(self.handle)
+	end
 end
 
 ---@class net.udp
 local udp = {}
 do
-	-- tbd
+	---@class net.udp.Socket
+	---@field private handle net.raw.Handle
+	local Socket = {}
+	Socket.__index = Socket
+
+	---@param handle net.raw.Handle
+	function Socket.new(handle)
+		return setmetatable({ handle = handle }, Socket)
+	end
+
+	---@param address string
+	---@param port number
+	---@return net.udp.Socket?, string?
+	function udp.bind(address, port)
+		local handle, err = raw.udp()
+		if not handle then
+			return nil, err
+		end
+
+		local ok, err = raw.bind(handle, address, port)
+		if not ok then
+			raw.close(handle)
+			return nil, err
+		end
+
+		return Socket.new(handle), nil
+	end
+
+	---@param address string
+	---@param port number
+	---@return net.udp.Socket?, string?
+	function udp.connect(address, port)
+		local handle, err = raw.udp()
+		if not handle then
+			return nil, err
+		end
+
+		local ok, err = raw.connect(handle, address, port)
+		if not ok then
+			raw.close(handle)
+			return nil, err
+		end
+
+		return Socket.new(handle), nil
+	end
+
+	---@param data string
+	---@param address string
+	---@param port number
+	---@return true?, string?
+	function Socket:sendTo(data, address, port)
+		return raw.sendto(self.handle, data, address, port)
+	end
+
+	---@param data string|ffi.cdata*
+	---@param n number?
+	---@return true?, string?
+	function Socket:send(data, n)
+		if type(data) == "string" then
+			n = #data
+			data = ffi.cast("char*", data)
+		end
+
+		local got, err = raw.write(self.handle, data, n)
+		if not got then
+			return nil, "send failed: " .. err
+		end
+
+		return true
+	end
+
+	--- Returns data, sender address, sender port, or nil + error.
+	---@return string?, string?, number?, string?
+	function Socket:recvFrom()
+		return raw.recvfrom(self.handle)
+	end
+
+	function Socket:close()
+		return raw.close(self.handle)
+	end
 end
 
 net.udp = udp

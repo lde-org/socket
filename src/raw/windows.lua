@@ -48,6 +48,7 @@ local SOCK_STREAM    = 1
 local SOCK_DGRAM     = 2
 local RECV_BUF       = 4096
 local INVALID_SOCKET = ffi.cast("SOCKET", -1)
+local SOCKADDR_SIZE  = ffi.sizeof("struct sockaddr_in")
 
 -- WSAData buffer: 408 bytes covers both 32- and 64-bit layouts
 local wsadata        = ffi.new("char[408]")
@@ -58,9 +59,30 @@ local function errmsg()
 	return "WSAError " .. ws2.WSAGetLastError()
 end
 
+---@param address string
+---@param port integer
+---@return ffi.cdata*
+local function newSockaddrIn(address, port)
+	local addr           = ffi.new("struct sockaddr_in")
+	addr.sin_family      = AF_INET
+	addr.sin_port        = ws2.htons(port)
+	addr.sin_addr.s_addr = ws2.inet_addr(address)
+	return addr
+end
+
 ---@return socket.raw.Handle?, string?
-function socket.socket()
+function socket.tcp()
 	local s = ws2.socket(AF_INET, SOCK_STREAM, 0)
+	if s == INVALID_SOCKET then
+		return nil, "socket failed: " .. errmsg()
+	end
+
+	return s
+end
+
+---@return socket.raw.Handle?, string?
+function socket.udp()
+	local s = ws2.socket(AF_INET, SOCK_DGRAM, 0)
 	if s == INVALID_SOCKET then
 		return nil, "socket failed: " .. errmsg()
 	end
@@ -73,12 +95,8 @@ end
 ---@param port integer
 ---@return true?, string?
 function socket.connect(handle, address, port)
-	local addr           = ffi.new("struct sockaddr_in")
-	addr.sin_family      = AF_INET
-	addr.sin_port        = ws2.htons(port)
-	addr.sin_addr.s_addr = ws2.inet_addr(address)
-
-	if ws2.connect(handle, ffi.cast("struct sockaddr *", addr), ffi.sizeof(addr)) ~= 0 then
+	local addr = newSockaddrIn(address, port)
+	if ws2.connect(handle, ffi.cast("struct sockaddr *", addr), SOCKADDR_SIZE) ~= 0 then
 		return nil, "connect failed: " .. errmsg()
 	end
 
@@ -90,12 +108,8 @@ end
 ---@param port integer
 ---@return true?, string?
 function socket.bind(handle, address, port)
-	local addr           = ffi.new("struct sockaddr_in")
-	addr.sin_family      = AF_INET
-	addr.sin_port        = ws2.htons(port)
-	addr.sin_addr.s_addr = ws2.inet_addr(address)
-
-	if ws2.bind(handle, ffi.cast("struct sockaddr *", addr), ffi.sizeof(addr)) ~= 0 then
+	local addr = newSockaddrIn(address, port)
+	if ws2.bind(handle, ffi.cast("struct sockaddr *", addr), SOCKADDR_SIZE) ~= 0 then
 		return nil, "bind failed: " .. errmsg()
 	end
 
@@ -117,7 +131,7 @@ end
 ---@return socket.raw.Handle?, string?
 function socket.accept(handle)
 	local addr    = ffi.new("struct sockaddr_in")
-	local addrlen = ffi.new("int[1]", ffi.sizeof(addr))
+	local addrlen = ffi.new("int[1]", SOCKADDR_SIZE)
 	local s       = ws2.accept(handle, ffi.cast("struct sockaddr *", addr), addrlen)
 
 	if s == INVALID_SOCKET then
@@ -154,10 +168,45 @@ function socket.write(handle, data, len)
 end
 
 ---@param handle socket.raw.Handle
+---@param data string
+---@param address string
+---@param port integer
+---@return true?, string?
+function socket.sendto(handle, data, address, port)
+	local addr = newSockaddrIn(address, port)
+	if ws2.sendto(handle, data, #data, 0, ffi.cast("struct sockaddr *", addr), SOCKADDR_SIZE) < 0 then
+		return nil, "sendto failed: " .. errmsg()
+	end
+	return true
+end
+
+---@param handle socket.raw.Handle
+---@return string?, string?, number?, string?
+function socket.recvfrom(handle)
+	local buf     = ffi.new("char[?]", RECV_BUF)
+	local addr    = ffi.new("struct sockaddr_in")
+	local addrlen = ffi.new("int[1]", SOCKADDR_SIZE)
+	local n       = ws2.recvfrom(handle, buf, RECV_BUF, 0, ffi.cast("struct sockaddr *", addr), addrlen)
+
+	if n < 0 then
+		return nil, nil, nil, "recvfrom failed: " .. errmsg()
+	end
+
+	local s_addr = addr.sin_addr.s_addr
+	local ip     = string.format("%d.%d.%d.%d",
+		bit.band(s_addr, 0xFF),
+		bit.band(bit.rshift(s_addr, 8), 0xFF),
+		bit.band(bit.rshift(s_addr, 16), 0xFF),
+		bit.band(bit.rshift(s_addr, 24), 0xFF))
+
+	return ffi.string(buf, n), ip, tonumber(ws2.ntohs(addr.sin_port))
+end
+
+---@param handle socket.raw.Handle
 ---@return string?, number?, string?
 function socket.getsockname(handle)
 	local addr    = ffi.new("struct sockaddr_in")
-	local addrlen = ffi.new("int[1]", ffi.sizeof(addr))
+	local addrlen = ffi.new("int[1]", SOCKADDR_SIZE)
 	if ws2.getsockname(handle, ffi.cast("struct sockaddr *", addr), addrlen) ~= 0 then
 		return nil, nil, "getsockname failed: " .. errmsg()
 	end

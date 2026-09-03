@@ -12,7 +12,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-22.04
+          - os: ubuntu-22.04
+            # musl: run tests inside an Alpine container
+            musl: true
           - os: ubuntu-22.04-arm
+          - os: ubuntu-22.04-arm
+            # musl: run tests inside an Alpine container
+            musl: true
           - os: ubuntu-22.04-arm
             android: true
           - os: windows-latest
@@ -28,14 +34,35 @@ jobs:
           submodules: recursive
 
       - name: Setup lde
+        if: "!matrix.musl"
         uses: lde-org/setup-lde@master
         with:
           version: nightly
           platform: ${{ matrix.android && 'Android' || '' }}
 
       - name: Run tests
-        if: "!matrix.android"
+        if: "!matrix.android && !matrix.musl"
         run: lde test
+
+      # musl (Alpine) tests: the musl lde build is dynamically linked against
+      # the musl loader (libc.musl-*.so.1), which GitHub runners don't ship,
+      # so run it in a real musl environment — an Alpine container, using the
+      # nightly musl binary the same way the official alpine image installs it.
+      - name: Run tests (musl)
+        if: matrix.musl
+        run: |
+          docker run --rm -w /workspace \
+            -v ${{ github.workspace }}:/workspace \
+            alpine:3.20 \
+            sh -c '
+              apk add --no-cache curl ca-certificates unzip git libgcc &&
+              case "$(uname -m)" in x86_64) A=x86-64;; aarch64) A=aarch64;; esac &&
+              curl -fsSLo /tmp/lde.zip https://github.com/lde-org/lde/releases/download/nightly/lde-linux-$A-musl.zip &&
+              unzip -q /tmp/lde.zip -d /tmp/lde &&
+              install -m755 /tmp/lde/lde-linux-$A-musl /usr/local/bin/lde &&
+              chmod -R a+rw /workspace &&
+              lde test
+            '
 
       # Needed otherwise created lde.lock will be unable to be read
       - name: Fix workspace permissions (Android)

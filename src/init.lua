@@ -3,6 +3,8 @@ local ffi = require("ffi")
 local charBuffer = ffi.typeof("char[?]")
 local charPtr    = ffi.typeof("char*")
 
+local rawwatch   = require("socket.raw.watch")
+
 ---@class socket
 local socket = {}
 
@@ -352,6 +354,74 @@ do
 	function Socket:setNonBlocking(enable)
 		return raw.setnonblocking(self.handle, enable)
 	end
+end
+
+--- A stateful readiness watcher: add sockets once and wait for the subset
+--- that can be read without blocking (including peers that closed).
+---@class socket.Watcher
+---@field private raw socket.raw.Watcher
+---@field private byId table<integer, table>
+local Watcher = {}
+Watcher.__index = Watcher
+
+---@return socket.Watcher
+function Watcher.new()
+	return setmetatable({
+		raw    = rawwatch.new(),
+		byId   = {},
+		nextId = 1,
+	}, Watcher)
+end
+
+--- Watches a listener, stream or udp socket for readability. Returns a
+--- stable id used by `remove`.
+---@param obj (socket.tcp.Stream|socket.tcp.Listener|socket.udp.Socket)
+---@return integer
+function Watcher:add(obj)
+	local id = self.nextId
+	self.nextId = self.nextId + 1
+
+	self.raw:add(obj.handle)
+	self.byId[id] = obj
+	return id
+end
+
+--- Stops watching an id from `add`.
+---@param id integer
+function Watcher:remove(id)
+	self.raw:remove(id)
+	self.byId[id] = nil
+end
+
+--- Waits for readable sockets. Returns the subset of watched objects that
+--- are ready; an empty table when `timeout` elapses first (nil waits
+--- forever, 0 only checks).
+---@param timeout integer?
+---@return table?, string?
+function Watcher:wait(timeout)
+	local ids, err = self.raw:wait(timeout)
+	if not ids then
+		return nil, err
+	end
+
+	local ready = {}
+	for i = 1, #ids do
+		ready[i] = self.byId[ids[i]]
+	end
+
+	return ready
+end
+
+--- Releases the underlying kernel watcher.
+function Watcher:close()
+	self.raw:close()
+end
+
+--- Creates a readiness watcher. Sockets must be non-blocking; see
+--- `setNonBlocking`.
+---@return socket.Watcher
+function socket.watch()
+	return Watcher.new()
 end
 
 --- Polls sockets for readability, returning the subset that are ready. This

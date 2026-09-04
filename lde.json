@@ -1,5 +1,7 @@
 {
 	"name": "socket",
+	"description": "A cross platform socket library.",
+	"authors": ["David Cruz <david@bycruz.dev>"],
 	"version": "0.1.0",
 	"dependencies": {},
 	"devDependencies": {

@@ -157,6 +157,10 @@ function socket.read(handle, buf, len)
 		return nil, "read failed: " .. errmsg()
 	end
 
+	if n == 0 then
+		return nil, "connection closed"
+	end
+
 	return n
 end
 

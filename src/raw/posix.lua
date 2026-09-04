@@ -75,10 +75,10 @@ local SOCKADDR_SIZE = ffi.sizeof("struct sockaddr_in")
 -- fcntl
 local F_GETFL     = 3
 local F_SETFL     = 4
-local O_NONBLOCK  = isOsx and 0x0004 or 0x0800
+local O_NONBLOCK  = isOsx ? 0x0004 : 0x0800
 
 -- EAGAIN == EWOULDBLOCK differs per platform.
-local WOULD_BLOCK = isOsx and 35 or 11
+local WOULD_BLOCK = isOsx ? 35 : 11
 
 -- poll(2) event bits; HUP/ERR/NVAL count as readable so callers notice
 -- closed peers and failures instead of waiting forever.

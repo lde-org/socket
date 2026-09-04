@@ -225,7 +225,7 @@ end
 ---@param enable boolean
 ---@return true?, string?
 function socket.setnonblocking(handle, enable)
-	local arg = longBuf(enable and 1 or 0)
+	local arg = longBuf(enable ? 1 : 0)
 	if ws2.ioctlsocket(handle, FIONBIO, arg) ~= 0 then
 		return nil, "ioctlsocket failed: " .. errmsg()
 	end

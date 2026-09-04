@@ -20,17 +20,14 @@ watcher.__index = watcher
 
 -- epoll (Linux): O(1) per event, reports only ready fds.
 if isLinux then
+	-- struct epoll_event is packed in the kernel: events at offset 0 and the
+	-- 64-bit data at offset 4. Spell that out as two u32 halves so the layout
+	-- matches without relying on attribute support.
 	ffi.cdef([[
-		typedef union epoll_data {
-			void    *ptr;
-			int      fd;
-			uint32_t u32;
-			uint64_t u64;
-		} epoll_data_t;
-
 		struct epoll_event {
-			uint32_t     events;
-			epoll_data_t data;
+			uint32_t events;
+			uint32_t data_lo;
+			uint32_t data_hi;
 		};
 
 		int epoll_create1(int flags);
@@ -70,8 +67,9 @@ if isLinux then
 		self.next = self.next + 1
 
 		local event = ffi.new("struct epoll_event")
-		event.events = EPOLLIN
-		event.data.u64 = sid
+		event.events  = EPOLLIN
+		event.data_lo = sid
+		event.data_hi = 0
 		ffi.C.epoll_ctl(self.epfd, EPOLL_CTL_ADD, handle, event)
 
 		self.bySid[sid] = handle
@@ -102,7 +100,7 @@ if isLinux then
 		local ready = {}
 		for i = 0, n - 1 do
 			if self.events[i].events & READY ~= 0 then
-				ready[#ready + 1] = tonumber(self.events[i].data.u64)
+				ready[#ready + 1] = self.events[i].data_lo
 			end
 		end
 
@@ -224,7 +222,7 @@ if isOsx then
 end
 
 -- poll / WSAPoll (everything else): O(n) but portable.
-local rawModule = require(jit.os == "Windows" and "socket.raw.windows" or "socket.raw.posix")
+local rawModule = require(jit.os == "Windows" ? "socket.raw.windows" : "socket.raw.posix")
 
 ---@type socket.raw.Watcher
 local Poll = {}

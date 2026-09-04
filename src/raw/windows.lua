@@ -31,6 +31,13 @@ ffi.cdef([[
 	int    recv(SOCKET s, char *buf, int len, int flags);
 	int    send(SOCKET s, const char *buf, int len, int flags);
 	int    closesocket(SOCKET s);
+	int    ioctlsocket(SOCKET s, long cmd, unsigned long *argp);
+	int    WSAPoll(struct pollfd *fds, unsigned long nfds, int timeout);
+	struct pollfd {
+		SOCKET fd;
+		short  events;
+		short  revents;
+	};
 	u_short       htons(u_short hostshort);
 	u_short       ntohs(u_short netshort);
 	unsigned long inet_addr(const char *cp);
@@ -49,6 +56,20 @@ local SOCK_DGRAM     = 2
 local RECV_BUF       = 4096
 local INVALID_SOCKET = ffi.cast("SOCKET", -1)
 local SOCKADDR_SIZE  = ffi.sizeof("struct sockaddr_in")
+
+-- ioctlsocket
+local FIONBIO = 0x8004667E
+
+-- recv/send/accept report this instead of blocking on a non-blocking socket.
+local WSAEWOULDBLOCK = 10035
+
+-- WSAPoll event bits; HUP/ERR/NVAL count as readable so callers notice
+-- closed peers and failures instead of waiting forever.
+local POLLIN     = 0x001
+local POLLERR    = 0x008
+local POLLHUP    = 0x010
+local POLLNVAL   = 0x020
+local POLL_READY = POLLIN | POLLERR | POLLHUP | POLLNVAL
 
 -- WSAData buffer: 408 bytes covers both 32- and 64-bit layouts
 local wsadata        = ffi.new("char[408]")
@@ -135,6 +156,10 @@ function socket.accept(handle)
 	local s       = ws2.accept(handle, ffi.cast("struct sockaddr *", addr), addrlen)
 
 	if s == INVALID_SOCKET then
+		if ws2.WSAGetLastError() == WSAEWOULDBLOCK then
+			return nil, "would block"
+		end
+
 		return nil, "accept failed: " .. errmsg()
 	end
 
@@ -148,6 +173,10 @@ end
 function socket.read(handle, buf, len)
 	local n = ws2.recv(handle, buf, len, 0)
 	if n < 0 then
+		if ws2.WSAGetLastError() == WSAEWOULDBLOCK then
+			return nil, "would block"
+		end
+
 		return nil, "read failed: " .. errmsg()
 	end
 
@@ -165,10 +194,64 @@ end
 function socket.write(handle, data, len)
 	local n = ws2.send(handle, data, len, 0)
 	if n < 0 then
+		if ws2.WSAGetLastError() == WSAEWOULDBLOCK then
+			return nil, "would block"
+		end
+
 		return nil, "write failed: " .. errmsg()
 	end
 
 	return n
+end
+
+--- Toggles non-blocking mode. Readiness must then be checked with
+--- `socket.poll`; reads, writes and accepts report "would block" instead of
+--- hanging when there is nothing to do.
+---@param handle socket.raw.Handle
+---@param enable boolean
+---@return true?, string?
+function socket.setnonblocking(handle, enable)
+	local arg = ffi.new("unsigned long[1]", enable and 1 or 0)
+	if ws2.ioctlsocket(handle, FIONBIO, arg) ~= 0 then
+		return nil, "ioctlsocket failed: " .. errmsg()
+	end
+
+	return true
+end
+
+--- Polls raw handles for readability. Returns the 1-based indexes into
+--- `handles` that are ready (including peers that closed). `timeout` is in
+--- milliseconds; pass -1 (or nil upstream) to wait forever and 0 to only
+--- check.
+---@param handles socket.raw.Handle[]
+---@param timeout integer
+---@return integer[]?, string?
+function socket.poll(handles, timeout)
+	local n   = #handles
+	local fds = ffi.new("struct pollfd[?]", n)
+
+	for i = 0, n - 1 do
+		fds[i].fd     = handles[i + 1]
+		fds[i].events = POLLIN
+	end
+
+	local ret = ws2.WSAPoll(fds, n, timeout)
+	if ret < 0 then
+		return nil, "poll failed: " .. errmsg()
+	end
+
+	local ready = {}
+	if ret == 0 then
+		return ready
+	end
+
+	for i = 0, n - 1 do
+		if fds[i].revents & POLL_READY ~= 0 then
+			ready[#ready + 1] = i + 1
+		end
+	end
+
+	return ready
 end
 
 ---@param handle socket.raw.Handle
@@ -179,6 +262,10 @@ end
 function socket.sendto(handle, data, address, port)
 	local addr = newSockaddrIn(address, port)
 	if ws2.sendto(handle, data, #data, 0, ffi.cast("struct sockaddr *", addr), SOCKADDR_SIZE) < 0 then
+		if ws2.WSAGetLastError() == WSAEWOULDBLOCK then
+			return nil, "would block"
+		end
+
 		return nil, "sendto failed: " .. errmsg()
 	end
 	return true
@@ -193,6 +280,10 @@ function socket.recvfrom(handle)
 	local n       = ws2.recvfrom(handle, buf, RECV_BUF, 0, ffi.cast("struct sockaddr *", addr), addrlen)
 
 	if n < 0 then
+		if ws2.WSAGetLastError() == WSAEWOULDBLOCK then
+			return nil, nil, nil, "would block"
+		end
+
 		return nil, nil, nil, "recvfrom failed: " .. errmsg()
 	end
 

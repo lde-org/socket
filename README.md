@@ -65,3 +65,46 @@ local sock = assert(socket.udp.connect("127.0.0.1", 9000))
 sock:send("ping")
 sock:close()
 ```
+
+### Non-blocking sockets and polling
+
+```lua
+local socket = require("socket")
+
+-- Streams, listeners and udp sockets can be toggled between blocking and
+-- non-blocking mode.
+local stream = assert(socket.tcp.connect("127.0.0.1", 8080))
+assert(stream:setNonBlocking(true))
+
+-- socket.poll() returns the subset of handles that are ready to read
+-- (including peers that closed, so EOF never hangs a poller).
+local listener = assert(socket.tcp.bind("0.0.0.0", 8081))
+assert(listener:setNonBlocking(true))
+
+while true do
+    local ready = assert(socket.poll({ listener, stream }, 1000))
+
+    for _, sock in ipairs(ready) do
+        if sock == listener then
+            local conn = assert(listener:accept())
+            conn:setNonBlocking(true)
+        else
+            -- readSome reads what is available without looping; it returns
+            -- nil + "would block" when there is nothing buffered yet.
+            local data, err = stream:readSome(4096)
+            if err == "would block" then
+                -- spurious wakeup, keep polling
+            elseif err then
+                stream:close()
+            else
+                stream:write(data)
+            end
+        end
+    end
+end
+```
+
+`timeout` is in milliseconds: `socket.poll(handles, 0)` only checks, and
+`nil` waits forever. Exact `read`/`write` calls assume blocking sockets;
+once a socket is non-blocking, use `readSome`/`readSomeInto` (and poll for
+writability separately if you push large payloads).

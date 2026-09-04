@@ -54,8 +54,22 @@ local AF_INET        = 2
 local SOCK_STREAM    = 1
 local SOCK_DGRAM     = 2
 local RECV_BUF       = 4096
-local INVALID_SOCKET = ffi.cast("SOCKET", -1)
 local SOCKADDR_SIZE  = ffi.sizeof("struct sockaddr_in")
+
+-- Cached ctypes: ffi.typeof parses the declaration once instead of on every
+-- ffi.new/ffi.cast call.
+local socketT    = ffi.typeof("SOCKET")
+local sockaddrIn = ffi.typeof("struct sockaddr_in")
+local sockaddrP  = ffi.typeof("struct sockaddr *")
+local intBuf     = ffi.typeof("int[1]")
+local longBuf    = ffi.typeof("unsigned long[1]")
+local recvBuf    = ffi.typeof("char[?]")
+
+-- WSAPoll is synchronous, so one growable fd array is safe to reuse.
+local pollfdArr = ffi.typeof("struct pollfd[?]")
+local pollfds, pollfdsCap
+
+local INVALID_SOCKET = ffi.cast(socketT, -1)
 
 -- ioctlsocket
 local FIONBIO = 0x8004667E
@@ -72,7 +86,7 @@ local POLLNVAL   = 0x020
 local POLL_READY = POLLIN | POLLERR | POLLHUP | POLLNVAL
 
 -- WSAData buffer: 408 bytes covers both 32- and 64-bit layouts
-local wsadata        = ffi.new("char[408]")
+local wsadata        = ffi.typeof("char[408]")()
 ws2.WSAStartup(0x0202, wsadata)
 
 ---@return string
@@ -84,7 +98,7 @@ end
 ---@param port integer
 ---@return ffi.cdata*
 local function newSockaddrIn(address, port)
-	local addr           = ffi.new("struct sockaddr_in")
+	local addr           = sockaddrIn()
 	addr.sin_family      = AF_INET
 	addr.sin_port        = ws2.htons(port)
 	addr.sin_addr.s_addr = ws2.inet_addr(address)
@@ -117,7 +131,7 @@ end
 ---@return true?, string?
 function socket.connect(handle, address, port)
 	local addr = newSockaddrIn(address, port)
-	if ws2.connect(handle, ffi.cast("struct sockaddr *", addr), SOCKADDR_SIZE) ~= 0 then
+	if ws2.connect(handle, ffi.cast(sockaddrP, addr), SOCKADDR_SIZE) ~= 0 then
 		return nil, "connect failed: " .. errmsg()
 	end
 
@@ -130,7 +144,7 @@ end
 ---@return true?, string?
 function socket.bind(handle, address, port)
 	local addr = newSockaddrIn(address, port)
-	if ws2.bind(handle, ffi.cast("struct sockaddr *", addr), SOCKADDR_SIZE) ~= 0 then
+	if ws2.bind(handle, ffi.cast(sockaddrP, addr), SOCKADDR_SIZE) ~= 0 then
 		return nil, "bind failed: " .. errmsg()
 	end
 
@@ -151,9 +165,9 @@ end
 ---@param handle socket.raw.Handle
 ---@return socket.raw.Handle?, string?
 function socket.accept(handle)
-	local addr    = ffi.new("struct sockaddr_in")
-	local addrlen = ffi.new("int[1]", SOCKADDR_SIZE)
-	local s       = ws2.accept(handle, ffi.cast("struct sockaddr *", addr), addrlen)
+	local addr    = sockaddrIn()
+	local addrlen = intBuf(SOCKADDR_SIZE)
+	local s       = ws2.accept(handle, ffi.cast(sockaddrP, addr), addrlen)
 
 	if s == INVALID_SOCKET then
 		if ws2.WSAGetLastError() == WSAEWOULDBLOCK then
@@ -211,7 +225,7 @@ end
 ---@param enable boolean
 ---@return true?, string?
 function socket.setnonblocking(handle, enable)
-	local arg = ffi.new("unsigned long[1]", enable and 1 or 0)
+	local arg = longBuf(enable and 1 or 0)
 	if ws2.ioctlsocket(handle, FIONBIO, arg) ~= 0 then
 		return nil, "ioctlsocket failed: " .. errmsg()
 	end
@@ -228,7 +242,12 @@ end
 ---@return integer[]?, string?
 function socket.poll(handles, timeout)
 	local n   = #handles
-	local fds = ffi.new("struct pollfd[?]", n)
+	if not pollfds or n > pollfdsCap then
+		pollfds    = pollfdArr(n)
+		pollfdsCap = n
+	end
+
+	local fds = pollfds
 
 	for i = 0, n - 1 do
 		fds[i].fd     = handles[i + 1]
@@ -261,7 +280,7 @@ end
 ---@return true?, string?
 function socket.sendto(handle, data, address, port)
 	local addr = newSockaddrIn(address, port)
-	if ws2.sendto(handle, data, #data, 0, ffi.cast("struct sockaddr *", addr), SOCKADDR_SIZE) < 0 then
+	if ws2.sendto(handle, data, #data, 0, ffi.cast(sockaddrP, addr), SOCKADDR_SIZE) < 0 then
 		if ws2.WSAGetLastError() == WSAEWOULDBLOCK then
 			return nil, "would block"
 		end
@@ -274,10 +293,10 @@ end
 ---@param handle socket.raw.Handle
 ---@return string?, string?, number?, string?
 function socket.recvfrom(handle)
-	local buf     = ffi.new("char[?]", RECV_BUF)
-	local addr    = ffi.new("struct sockaddr_in")
-	local addrlen = ffi.new("int[1]", SOCKADDR_SIZE)
-	local n       = ws2.recvfrom(handle, buf, RECV_BUF, 0, ffi.cast("struct sockaddr *", addr), addrlen)
+	local buf     = recvBuf(RECV_BUF)
+	local addr    = sockaddrIn()
+	local addrlen = intBuf(SOCKADDR_SIZE)
+	local n       = ws2.recvfrom(handle, buf, RECV_BUF, 0, ffi.cast(sockaddrP, addr), addrlen)
 
 	if n < 0 then
 		if ws2.WSAGetLastError() == WSAEWOULDBLOCK then
@@ -300,9 +319,9 @@ end
 ---@param handle socket.raw.Handle
 ---@return string?, number?, string?
 function socket.getsockname(handle)
-	local addr    = ffi.new("struct sockaddr_in")
-	local addrlen = ffi.new("int[1]", SOCKADDR_SIZE)
-	if ws2.getsockname(handle, ffi.cast("struct sockaddr *", addr), addrlen) ~= 0 then
+	local addr    = sockaddrIn()
+	local addrlen = intBuf(SOCKADDR_SIZE)
+	if ws2.getsockname(handle, ffi.cast(sockaddrP, addr), addrlen) ~= 0 then
 		return nil, nil, "getsockname failed: " .. errmsg()
 	end
 	local s_addr = addr.sin_addr.s_addr

@@ -1,5 +1,8 @@
 local ffi = require("ffi")
 
+local charBuffer = ffi.typeof("char[?]")
+local charPtr    = ffi.typeof("char*")
+
 ---@class socket
 local socket = {}
 
@@ -130,7 +133,7 @@ do
 	--- with "would block" after already consuming bytes.
 	---@param n number
 	function Stream:read(n)
-		local buf   = ffi.new("char[?]", n)
+		local buf   = charBuffer(n)
 
 		local total = 0
 		while total < n do
@@ -175,7 +178,7 @@ do
 	---@param n number
 	---@return string?, string?
 	function Stream:readSome(n)
-		local buf   = ffi.new("char[?]", n)
+		local buf   = charBuffer(n)
 
 		local got, err = raw.read(self.handle, buf, n)
 		if not got then
@@ -219,7 +222,7 @@ do
 	function Stream:write(buf, n)
 		if type(buf) == "string" then
 			n = #buf
-			buf = ffi.cast("char*", buf)
+			buf = ffi.cast(charPtr, buf)
 		end
 
 		local total = 0
@@ -312,7 +315,7 @@ do
 	function Socket:send(data, n)
 		if type(data) == "string" then
 			n = #data
-			data = ffi.cast("char*", data)
+			data = ffi.cast(charPtr, data)
 		end
 
 		local got, err = raw.write(self.handle, data, n)

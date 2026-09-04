@@ -88,6 +88,17 @@ local POLLHUP    = 0x010
 local POLLNVAL   = 0x020
 local POLL_READY = POLLIN | POLLERR | POLLHUP | POLLNVAL
 
+-- Cached ctypes: ffi.typeof parses the declaration once instead of on every
+-- ffi.new/ffi.cast call.
+local sockaddrIn = ffi.typeof("struct sockaddr_in")
+local sockaddrP  = ffi.typeof("struct sockaddr *")
+local socklenBuf = ffi.typeof("socklen_t[1]")
+local recvBuf    = ffi.typeof("char[?]")
+
+-- poll() is synchronous, so one growable fd array is safe to reuse.
+local pollfdArr = ffi.typeof("struct pollfd[?]")
+local pollfds, pollfdsCap
+
 ---@return string
 local function errmsg()
 	return ffi.string(ffi.C.strerror(ffi.errno()))
@@ -97,7 +108,7 @@ end
 ---@param port integer
 ---@return ffi.cdata*
 local function newSockaddrIn(address, port)
-	local addr      = ffi.new("struct sockaddr_in")
+	local addr      = sockaddrIn()
 	addr.sin_family = AF_INET
 	addr.sin_port   = ffi.C.htons(port)
 	addr.sin_addr   = ffi.C.inet_addr(address)
@@ -125,7 +136,7 @@ end
 ---@return true?, string?
 function socket.connect(handle, address, port)
 	local addr = newSockaddrIn(address, port)
-	if ffi.C.connect(handle, ffi.cast("struct sockaddr *", addr), SOCKADDR_SIZE) < 0 then
+	if ffi.C.connect(handle, ffi.cast(sockaddrP, addr), SOCKADDR_SIZE) < 0 then
 		return nil, "connect failed: " .. errmsg()
 	end
 	return true
@@ -137,7 +148,7 @@ end
 ---@return true?, string?
 function socket.bind(handle, address, port)
 	local addr = newSockaddrIn(address, port)
-	if ffi.C.bind(handle, ffi.cast("struct sockaddr *", addr), SOCKADDR_SIZE) < 0 then
+	if ffi.C.bind(handle, ffi.cast(sockaddrP, addr), SOCKADDR_SIZE) < 0 then
 		return nil, "bind failed: " .. errmsg()
 	end
 
@@ -158,10 +169,10 @@ end
 ---@param handle socket.raw.Handle
 ---@return socket.raw.Handle?, string?
 function socket.accept(handle)
-	local addr    = ffi.new("struct sockaddr_in")
-	local addrlen = ffi.new("socklen_t[1]", SOCKADDR_SIZE)
+	local addr    = sockaddrIn()
+	local addrlen = socklenBuf(SOCKADDR_SIZE)
 
-	local fd      = ffi.C.accept(handle, ffi.cast("struct sockaddr *", addr), addrlen)
+	local fd      = ffi.C.accept(handle, ffi.cast(sockaddrP, addr), addrlen)
 	if fd < 0 then
 		if ffi.errno() == WOULD_BLOCK then
 			return nil, "would block"
@@ -247,7 +258,12 @@ end
 ---@return integer[]?, string?
 function socket.poll(handles, timeout)
 	local n   = #handles
-	local fds = ffi.new("struct pollfd[?]", n)
+	if not pollfds or n > pollfdsCap then
+		pollfds    = pollfdArr(n)
+		pollfdsCap = n
+	end
+
+	local fds = pollfds
 
 	for i = 0, n - 1 do
 		fds[i].fd     = handles[i + 1]
@@ -299,11 +315,11 @@ end
 ---@param port integer
 ---@return true?, string?
 function socket.sendto(handle, data, address, port)
-	local addr      = ffi.new("struct sockaddr_in")
+	local addr      = sockaddrIn()
 	addr.sin_family = AF_INET
 	addr.sin_port   = ffi.C.htons(port)
 	addr.sin_addr   = ffi.C.inet_addr(address)
-	if ffi.C.sendto(handle, data, #data, 0, ffi.cast("struct sockaddr *", addr), ffi.sizeof(addr)) < 0 then
+	if ffi.C.sendto(handle, data, #data, 0, ffi.cast(sockaddrP, addr), ffi.sizeof(addr)) < 0 then
 		if ffi.errno() == WOULD_BLOCK then
 			return nil, "would block"
 		end
@@ -316,10 +332,10 @@ end
 ---@param handle socket.raw.Handle
 ---@return string?, string?, number?, string?
 function socket.recvfrom(handle)
-	local buf     = ffi.new("char[?]", RECV_BUF)
-	local addr    = ffi.new("struct sockaddr_in")
-	local addrlen = ffi.new("socklen_t[1]", ffi.sizeof(addr))
-	local n       = ffi.C.recvfrom(handle, buf, RECV_BUF, 0, ffi.cast("struct sockaddr *", addr), addrlen)
+	local buf     = recvBuf(RECV_BUF)
+	local addr    = sockaddrIn()
+	local addrlen = socklenBuf(SOCKADDR_SIZE)
+	local n       = ffi.C.recvfrom(handle, buf, RECV_BUF, 0, ffi.cast(sockaddrP, addr), addrlen)
 
 	if n < 0 then
 		if ffi.errno() == WOULD_BLOCK then
@@ -343,9 +359,9 @@ end
 ---@param handle socket.raw.Handle
 ---@return string?, number?, string?
 function socket.getsockname(handle)
-	local addr    = ffi.new("struct sockaddr_in")
-	local addrlen = ffi.new("socklen_t[1]", ffi.sizeof(addr))
-	if ffi.C.getsockname(handle, ffi.cast("struct sockaddr *", addr), addrlen) < 0 then
+	local addr    = sockaddrIn()
+	local addrlen = socklenBuf(SOCKADDR_SIZE)
+	if ffi.C.getsockname(handle, ffi.cast(sockaddrP, addr), addrlen) < 0 then
 		return nil, nil, "getsockname failed: " .. errmsg()
 	end
 	local raw_addr = addr.sin_addr

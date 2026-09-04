@@ -5,7 +5,7 @@ A cross platform `socket` library for [lde](https://lde.sh).
 ## Usage
 
 ```
-lde add socket --git https://github.com/lde-org/socket
+lde add socket
 ```
 
 ## Examples

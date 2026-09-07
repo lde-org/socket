@@ -211,6 +211,31 @@ do
 		return got
 	end
 
+	--- Writes up to n bytes in a single call without looping, returning how
+	--- many went out. A non-blocking stream with a full send buffer reports
+	--- nil + "would block" (with partial progress reported as the count, so
+	--- callers can resume from there).
+	---@param buf ffi.cdata*|string
+	---@param n number?
+	---@return number?, string?
+	function Stream:writeSome(buf, n)
+		if type(buf) == "string" then
+			n = #buf
+			buf = ffi.cast(charPtr, buf)
+		end
+
+		local got, err = raw.write(self.handle, buf, n)
+		if not got then
+			if err == "would block" then
+				return nil, err
+			end
+
+			return nil, "write failed: " .. err
+		end
+
+		return got
+	end
+
 	--- Toggles non-blocking mode; reads then report "would block" instead of
 	--- waiting. Check readiness with `socket.poll`.
 	---@param enable boolean

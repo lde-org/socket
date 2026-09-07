@@ -181,4 +181,27 @@ test.it("nonblocking udp recvFrom reports would block", function()
 	sock:close()
 end)
 
+test.skipIf(not isPosix)("writeSome sends available bytes", function()
+	local listener = assert(socket.tcp.bind("127.0.0.1", 0))
+	local _, port = assert(listener:getLocalAddr())
+
+	local pid = ffi.C.fork()
+	if pid == 0 then
+		local conn = assert(listener:accept())
+		local data = conn:read(4) -- blocking read of the payload
+		conn:close()
+		os.exit(data == "wxyz" and 0 or 1)
+	end
+
+	listener:close()
+	local stream = assert(socket.tcp.connect("127.0.0.1", port))
+	local n, err = stream:writeSome("wxyz")
+	test.equal(n, 4)
+	test.falsy(err)
+	stream:close()
+	local status = ffi.new("int[1]")
+	ffi.C.waitpid(pid, status, 0)
+	test.equal(status[0] >> 8, 0, "child should exit cleanly")
+end)
+
 return test.run()

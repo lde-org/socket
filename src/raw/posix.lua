@@ -64,6 +64,20 @@ ffi.cdef([[
 	ssize_t sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen);
 	ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen);
 	int     getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+
+	struct addrinfo {
+		int              ai_flags;
+		int              ai_family;
+		int              ai_socktype;
+		int              ai_protocol;
+		unsigned int     ai_addrlen;
+		struct sockaddr *ai_addr;
+		char            *ai_canonname;
+		struct addrinfo *ai_next;
+	};
+	int         getaddrinfo(const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res);
+	void        freeaddrinfo(struct addrinfo *res);
+	const char *gai_strerror(int errcode);
 ]])
 
 local AF_INET       = 2
@@ -91,6 +105,7 @@ local POLL_READY = POLLIN | POLLERR | POLLHUP | POLLNVAL
 -- Cached ctypes: ffi.typeof parses the declaration once instead of on every
 -- ffi.new/ffi.cast call.
 local sockaddrIn = ffi.typeof("struct sockaddr_in")
+local sockaddrInP = ffi.typeof("struct sockaddr_in *")
 local sockaddrP  = ffi.typeof("struct sockaddr *")
 local socklenBuf = ffi.typeof("socklen_t[1]")
 local recvBuf    = ffi.typeof("char[?]")
@@ -371,6 +386,42 @@ function socket.getsockname(handle)
 		bit.band(bit.rshift(raw_addr, 16), 0xFF),
 		bit.band(bit.rshift(raw_addr, 24), 0xFF))
 	return ip, tonumber(ffi.C.ntohs(addr.sin_port))
+end
+
+--- Resolves a hostname to a dotted-quad IPv4 address via the native
+--- resolver (getaddrinfo). Blocking, like everything else here.
+---@param host string
+---@return string?, string?
+function socket.resolve(host)
+	local hints = ffi.new("struct addrinfo")
+	hints.ai_family   = AF_INET
+	hints.ai_socktype = SOCK_STREAM
+
+	local res = ffi.new("struct addrinfo *[1]")
+	local code = ffi.C.getaddrinfo(host, nil, hints, res)
+	if code ~= 0 then
+		return nil, "resolve failed: " .. ffi.string(ffi.C.gai_strerror(code))
+	end
+
+	local ip
+	local ai = res[0]
+	while ai ~= nil do
+		local addr = ffi.cast(sockaddrInP, ai.ai_addr)
+		local raw  = addr.sin_addr
+		ip = string.format("%d.%d.%d.%d",
+			bit.band(raw, 0xFF),
+			bit.band(bit.rshift(raw, 8), 0xFF),
+			bit.band(bit.rshift(raw, 16), 0xFF),
+			bit.band(bit.rshift(raw, 24), 0xFF))
+		break
+	end
+
+	ffi.C.freeaddrinfo(res[0])
+	if not ip then
+		return nil, "no IPv4 address for " .. host
+	end
+
+	return ip
 end
 
 return socket

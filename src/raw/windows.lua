@@ -46,6 +46,21 @@ ffi.cdef([[
 	int    getsockname(SOCKET s, struct sockaddr *name, int *namelen);
 	int    WSAGetLastError(void);
 	int    WSAStartup(unsigned short wVersionRequested, void *lpWSAData);
+
+	-- winsock order: ai_canonname precedes ai_addr (unlike glibc)
+	struct addrinfo {
+		int              ai_flags;
+		int              ai_family;
+		int              ai_socktype;
+		int              ai_protocol;
+		size_t           ai_addrlen;
+		char            *ai_canonname;
+		struct sockaddr *ai_addr;
+		struct addrinfo *ai_next;
+	};
+	int         getaddrinfo(const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res);
+	void        freeaddrinfo(struct addrinfo *res);
+	const char *gai_strerror(int errcode);
 ]])
 
 local ws2 = ffi.load("ws2_32")
@@ -341,6 +356,46 @@ function socket.close(handle)
 	end
 
 	return true
+end
+
+--- Resolves a hostname to a dotted-quad IPv4 address via the native
+--- resolver (getaddrinfo). Blocking, like everything else here.
+---@param host string
+---@return string?, string?
+function socket.resolve(host)
+	local hints = ffi.new("struct addrinfo")
+	hints.ai_family   = AF_INET
+	hints.ai_socktype = SOCK_STREAM
+
+	local res = ffi.new("struct addrinfo *[1]")
+	local code = ws2.getaddrinfo(host, nil, hints, res)
+	if code ~= 0 then
+		return nil, "resolve failed: " .. ffi.string(ws2.gai_strerror(code))
+	end
+
+	local ip
+	local ai = res[0]
+	while ai ~= nil do
+		if ai.ai_addr ~= nil then
+			local addr = ffi.cast("struct sockaddr_in *", ai.ai_addr)
+			local s_addr = addr.sin_addr.s_addr
+			ip = string.format("%d.%d.%d.%d",
+				bit.band(s_addr, 0xFF),
+				bit.band(bit.rshift(s_addr, 8), 0xFF),
+				bit.band(bit.rshift(s_addr, 16), 0xFF),
+				bit.band(bit.rshift(s_addr, 24), 0xFF))
+			break
+		end
+
+		ai = ai.ai_next
+	end
+
+	ws2.freeaddrinfo(res[0])
+	if not ip then
+		return nil, "no IPv4 address for " .. host
+	end
+
+	return ip
 end
 
 return socket

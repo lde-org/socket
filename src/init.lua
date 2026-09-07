@@ -84,12 +84,17 @@ do
 	---@param address string
 	---@param port number
 	function tcp.connect(address, port)
+		local ip, err = socket.resolve(address)
+		if not ip then
+			return nil, err
+		end
+
 		local handle, err = raw.tcp()
 		if not handle then
 			return nil, err
 		end
 
-		local ok, err = raw.connect(handle, address, port)
+		local ok, err = raw.connect(handle, ip, port)
 		if not ok then
 			raw.close(handle)
 			return nil, err
@@ -314,12 +319,17 @@ do
 	---@param port number
 	---@return socket.udp.Socket?, string?
 	function udp.connect(address, port)
+		local ip, err = socket.resolve(address)
+		if not ip then
+			return nil, err
+		end
+
 		local handle, err = raw.udp()
 		if not handle then
 			return nil, err
 		end
 
-		local ok, err = raw.connect(handle, address, port)
+		local ok, err = raw.connect(handle, ip, port)
 		if not ok then
 			raw.close(handle)
 			return nil, err
@@ -440,6 +450,19 @@ end
 --- Releases the underlying kernel watcher.
 function Watcher:close()
 	self.raw:close()
+end
+
+--- Resolves a hostname to an IPv4 address via the native resolver.
+--- Dotted-quad literals are returned unchanged. `tcp.connect` and
+--- `udp.connect` resolve automatically.
+---@param host string
+---@return string?, string?
+function socket.resolve(host)
+	if host:match("^%d+%.%d+%.%d+%.%d+$") then
+		return host
+	end
+
+	return raw.resolve(host)
 end
 
 --- Creates a readiness watcher. Sockets must be non-blocking; see
